@@ -6,6 +6,8 @@ import json
 import serial
 import sys
 import time
+from dataclasses import dataclass
+from typing import Optional
 
 
 def find_port():
@@ -26,11 +28,116 @@ def find_port():
     )
 
 
+@dataclass
+class MoveResult:
+    """Result of PBM.move() or PBM.tap(), as in valet-pbm."""
+    position: Optional[int]
+    contact: bool = False
+    final_effort: Optional[float] = None
+    peak_effort: Optional[float] = None
+    effort_unit: Optional[str] = None
+
+
+class PBM:
+    """Push Button Module: the side-button actuators (Dynamixel IDs 4, 5, 6
+    by default), driven through the robot's firmware.
+
+    Same method names as valet-pbm (https://github.com/tapsterbot/valet-pbm).
+    Use it as `t.pbm` on a Tapster. Raises RuntimeError if the robot
+    replies with an error.
+    """
+
+    def __init__(self, tapster):
+        self._t = tapster
+
+    def _call(self, cmd, reply_timeout=5, **params):
+        msg = {"cmd": cmd}
+        msg.update({k: v for k, v in params.items() if v is not None})
+        resp = self._t.send_wait(msg, timeout=reply_timeout)
+        if resp is None:
+            raise RuntimeError(f"{cmd}: no reply from robot")
+        if "error" in resp:
+            raise RuntimeError(f"{cmd}: {resp['error']}")
+        return resp
+
+    @staticmethod
+    def _result(resp):
+        return MoveResult(resp["position"], resp["contact"],
+                          resp["final_effort"], resp["peak_effort"],
+                          resp["effort_unit"])
+
+    def ping(self, motor_id=None):
+        """True if the motor answers. With no id, a list for all PBM motors."""
+        resp = self._call("pbm_ping", id=motor_id)
+        if motor_id is None:
+            return resp["motors"]
+        return resp["found"]
+
+    def get_model_name(self, motor_id):
+        resp = self._call("pbm_ping", id=motor_id)
+        if not resp["found"]:
+            raise RuntimeError(f"PBM motor {motor_id} did not respond")
+        return resp["name"]
+
+    def led_on(self, motor_id):
+        self._call("pbm_led", id=motor_id, on=True)
+
+    def led_off(self, motor_id):
+        self._call("pbm_led", id=motor_id, on=False)
+
+    def get_led_status(self, motor_id):
+        return self._call("pbm_led", id=motor_id)["on"]
+
+    def blink(self, motor_id, times=5, interval=0.1):
+        self._call("pbm_blink", reply_timeout=5 + times * interval * 2,
+                   id=motor_id, times=times, interval=interval)
+
+    def torque_on(self, motor_id):
+        self._call("pbm_torque", id=motor_id, on=True)
+
+    def torque_off(self, motor_id):
+        self._call("pbm_torque", id=motor_id, on=False)
+
+    def get_torque_status(self, motor_id):
+        return self._call("pbm_torque", id=motor_id)["on"]
+
+    def get_position(self, motor_id):
+        return self._call("pbm_position", id=motor_id)["position"]
+
+    def get_effort(self, motor_id):
+        """Returns (value, unit): mA on XC330, % on XL430/XC430."""
+        resp = self._call("pbm_effort", id=motor_id)
+        return resp["effort"], resp["unit"]
+
+    def stop(self, motor_id):
+        return self._call("pbm_stop", id=motor_id)["position"]
+
+    def move(self, motor_id, goal_position, *, stop_on_contact=False,
+             wait=False, timeout=1.0, position_tolerance=10):
+        resp = self._call("pbm_move", reply_timeout=5 + timeout,
+                          id=motor_id, position=goal_position,
+                          stop_on_contact=stop_on_contact, wait=wait,
+                          timeout=timeout,
+                          position_tolerance=position_tolerance)
+        return self._result(resp)
+
+    def tap(self, motor_id, from_position, to_position, *,
+            stop_on_contact=True, hold=0.05, timeout=1.0):
+        # a tap is up to three moves of `timeout` each, plus the hold
+        resp = self._call("pbm_tap", reply_timeout=5 + 3 * timeout + hold,
+                          id=motor_id, from_position=from_position,
+                          to_position=to_position,
+                          stop_on_contact=stop_on_contact, hold=hold,
+                          timeout=timeout)
+        return self._result(resp)
+
+
 class Tapster:
     def __init__(self, port=None, baud=115200):
         if port is None:
             port = find_port()
         self.port = port
+        self.pbm = PBM(self)
         self.ser = serial.Serial(port, baud, timeout=0.5)
         # close before interpreter teardown, or pyserial's finalizer errors
         atexit.register(self.close)

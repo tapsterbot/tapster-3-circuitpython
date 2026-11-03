@@ -2,7 +2,7 @@
 
 This guide covers working on the Tapster 3 firmware: setting up, deploying, configuration, hardware and debugging. If you just want to use the robot, see the [README](../README.md).
 
-The firmware is CircuitPython and runs on an ESP32 DevKitC V4 (WROOM-32D/32E) or a Raspberry Pi Pico (RP2040) on a carrier board. The same files run on both, and the board is detected automatically. The motors are Dynamixel XC430-W240-T, XC330-T288-T or XC330-T181-T (Protocol 2.0).
+The firmware is CircuitPython and runs on an ESP32 DevKitC V4 (WROOM-32D/32E) or a Raspberry Pi Pico (RP2040) on a carrier board. The same files run on both, and the board is detected automatically. The motors are Dynamixel XC430-W240-T, XC330-T288-T or XC330-T181-T (Protocol 2.0). An optional Push Button Module (PBM) adds up to three more motors on the same bus.
 
 ## Setup
 
@@ -29,6 +29,7 @@ On the board (`firmware/`):
 - `dynamixel.py`: Dynamixel Protocol 2.0 driver with sync write.
 - `kinematics.py`: delta robot inverse and forward kinematics.
 - `motion.py`: linear interpolation, parabolic arcs and easing functions.
+- `pbm.py`: Push Button Module. A port of [valet-pbm](https://github.com/tapsterbot/valet-pbm) to `dynamixel.py`.
 
 On your computer:
 
@@ -55,7 +56,7 @@ Deploying copies `config.json` too, which overwrites any heights saved on the bo
 Or manually (ESP32):
 
 ```bash
-for f in config.json dynamixel.py kinematics.py motion.py hardware.py code.py; do
+for f in config.json dynamixel.py kinematics.py motion.py hardware.py pbm.py code.py; do
     ampy --port /dev/cu.usbserial-210 put firmware/$f
 done
 ```
@@ -78,6 +79,7 @@ done
     "motor_direction": [1, 1, 1],
     "motor_min": 1024,
     "motor_max": 3072,
+    "pbm_ids": [4, 5, 6],
     "speed": 100,
     "origin": [0, 0, -120],
     "safety_height": 0,
@@ -89,6 +91,7 @@ done
 - `dxl_baudrate`: motor bus speed. It must match the motors' Baud Rate register.
 - `cmd_baudrate`: speed of the command UART on the header pins. USB serial is separate.
 - `origin`: kinematic position that becomes the user `(0, 0, 0)`.
+- `pbm_ids`: Dynamixel IDs of the PBM motors. PBM commands refuse any other ID. Defaults to `[4, 5, 6]` if missing.
 - `board`, `pins`: optional overrides (see [Pinout](#pinout)).
 
 ### Calibration
@@ -137,6 +140,8 @@ While `CIRCUITPY` is mounted over USB, it is read-only to the firmware. `probe` 
 - Position range: 1024–3072 (90°–270°)
 - Model: XC430-W240-T, XC330-T288-T or XC330-T181-T (detected by ping)
 
+PBM motors (IDs 4, 5, 6) need the same Baud Rate and Protocol 2.0, Operating Mode 3 (position) and Status Return Level 2. Return Delay Time can be 250 like the delta motors (valet-pbm's 254 also works). Every motor on the bus needs a unique ID. The PBM also supports the XL430-W250-T.
+
 The three models share the control table except at address 126. On the XC430 it's Present Load (0.1 %). On the XC330 it's Present Current (1 mA). `get_load()` returns a percentage for both. On the XC330 it's Present Current as a percentage of Current Limit (address 38, default 910 mA). The two percentages aren't physically identical, so the `probe` threshold may need retuning on XC330 motors. `get_current()` returns raw mA on XC330s. Details in [dynamixel.md](dynamixel.md).
 
 ## Serial Console and Board REPL
@@ -169,6 +174,23 @@ dxl.get_current(1)             # 12 (mA, XC330 only)
 dxl.get_voltage(1)             # 120 (12.0V)
 dxl.get_profile_velocity(1)    # 100
 ```
+
+The PBM, on the same bus:
+
+```python
+from hardware import dynamixel_bus
+from pbm import PBM
+
+pbm = PBM(dynamixel_bus())     # ids=(4, 5, 6) by default
+pbm.ping(4)                    # True
+pbm.get_model_name(4)          # 'XC330-T181-T'
+pbm.get_position(4)            # 2048
+pbm.get_effort(4)              # (12.0, 'mA')
+pbm.tap(4, from_position=2048, to_position=1700)
+# MoveResult(position=1852, contact=True, final_effort=210.0, peak_effort=403.0, effort_unit='mA')
+```
+
+Contact detection can be tuned with `PBM(...)` options: `poll_interval`, `contact_samples`, `contact_ignore_time`, `contact_window`, `contact_min_progress`, `contact_min_travel`. They mean the same as in valet-pbm. Retries and the DIR pin are handled by `dynamixel.py` and `hardware.py`, so valet-pbm's Raspberry Pi transport options (`device`, `direction_pin`, `response_timeout_ms`, `retry_delay`) don't exist here.
 
 Using kinematics and motion directly:
 

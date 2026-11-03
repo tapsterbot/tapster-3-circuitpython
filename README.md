@@ -234,3 +234,80 @@ Blinks one motor's LED, which is handy for checking which motor is which.
 ```json
 {"cmd":"blink","id":1,"count":3}
 ```
+
+## Push Button Module (PBM)
+
+The PBM is a set of linear actuators mounted beside the device to press its side buttons (power, volume up, volume down). Its motors share the robot's Dynamixel bus and use IDs 4, 5 and 6 (`pbm_ids` in `config.json`). The robot works with or without a PBM attached. At startup it prints which PBM motors it found.
+
+Positions are raw motor positions (0–4095), not millimetres. Find a motor's resting (`from_position`) and pressed (`to_position`) positions for your device by moving it in small steps.
+
+From Python, the client has the same methods as [valet-pbm](https://github.com/tapsterbot/valet-pbm), under `t.pbm`:
+
+```python
+t.pbm.ping()                              # all PBM motors
+t.pbm.blink(4, times=3)                   # which one is motor 4?
+t.pbm.move(4, 1900, wait=True)            # MoveResult(position=1902, ...)
+result = t.pbm.tap(4, from_position=2048, to_position=1700)
+result.contact                            # True if it stopped on the button
+t.pbm.torque_off(4)                       # release the motor
+```
+
+PBM methods raise `RuntimeError` if the robot reports an error, for example a motor that doesn't answer.
+
+### pbm_tap
+
+Presses a button: moves to `from_position`, moves toward `to_position`, holds, then returns to `from_position`. By default it stops early when it meets the button.
+
+```json
+{"cmd":"pbm_tap","id":4,"from_position":2048,"to_position":1700}
+{"cmd":"pbm_tap","id":4,"from_position":2048,"to_position":1840,"stop_on_contact":false,"hold":0.5}
+```
+
+```json
+{"ok": true, "id": 4, "position": 1852, "contact": true, "final_effort": 210.0, "peak_effort": 403.0, "effort_unit": "mA"}
+```
+
+- `id`, `from_position` and `to_position` are required.
+- `stop_on_contact` (default `true`): stop when the motor stops making progress short of `to_position`. Contact is judged from position, not from effort.
+- `hold`: seconds to hold the press (default 0.05).
+- `timeout`: seconds allowed for each of the three moves (default 1.0).
+- The reply describes the press. `position` is where the press ended, and `contact` says whether it stopped on something. Effort is in `mA` on XC330 motors and `%` on XL430/XC430 motors.
+
+### pbm_move
+
+Moves one PBM motor to `position`.
+
+```json
+{"cmd":"pbm_move","id":4,"position":1900}
+{"cmd":"pbm_move","id":4,"position":1900,"wait":true}
+{"cmd":"pbm_move","id":4,"position":1700,"stop_on_contact":true}
+```
+
+- Without `wait` or `stop_on_contact`, it replies straight away with `"position": null`.
+- `wait`: reply once within `position_tolerance` (default 10) of the target, or after `timeout` seconds (default 1.0).
+- `stop_on_contact`: as for `pbm_tap`. It implies `wait`.
+
+`pbm_move` and `pbm_tap` turn the motor's torque on if it's off.
+
+### Other PBM commands
+
+Every PBM command takes the motor's `id`, except `pbm_ping`, where it's optional. IDs 1–3 are refused, so a PBM command can't move the delta arms.
+
+```json
+{"cmd":"pbm_ping"}
+{"cmd":"pbm_ping","id":4}
+{"cmd":"pbm_position","id":4}
+{"cmd":"pbm_effort","id":4}
+{"cmd":"pbm_stop","id":4}
+{"cmd":"pbm_torque","id":4,"on":false}
+{"cmd":"pbm_led","id":4,"on":true}
+{"cmd":"pbm_blink","id":4,"times":3,"interval":0.2}
+```
+
+- `pbm_ping`: whether each motor answers, and its model.
+- `pbm_position`: the motor's current position.
+- `pbm_effort`: current effort, with its unit (`mA` or `%`).
+- `pbm_stop`: holds the motor where it is now.
+- `pbm_torque`, `pbm_led`: turn on or off with `on`. Without `on`, they report the current state.
+
+`enable` and `disable` only affect the delta arms. Use `pbm_torque` for PBM motors.

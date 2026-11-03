@@ -11,6 +11,12 @@ import time
 from hardware import dynamixel_bus, command_uart, load_pins
 from kinematics import DeltaKinematics
 from motion import interpolate, steps_for_distance, hop
+# The PBM is an optional accessory: never let it stop the robot booting.
+try:
+    from pbm import PBM, DEFAULT_IDS
+except ImportError as e:
+    print("PBM support not loaded:", e)
+    PBM = None
 
 # -- load config --
 with open("/config.json", "r") as f:
@@ -43,6 +49,9 @@ SAFETY_HEIGHT = config.get("safety_height", 0)
 SURFACE_HEIGHT = config.get("surface_height", 0)
 MOTOR_MIN = config.get("motor_min", 1024)
 MOTOR_MAX = config.get("motor_max", 3072)
+
+# -- push button module (side-button actuators on the same bus) --
+pbm = PBM(dxl, config.get("pbm_ids", DEFAULT_IDS)) if PBM else None
 
 # -- command uart setup --
 cmd_uart = command_uart(config)
@@ -240,6 +249,96 @@ def respond(obj):
     print(out, end="")
 
 
+# -- PBM command handler --
+
+def pbm_ping_one(mid):
+    """{"id", "found", "name"} for one PBM motor."""
+    if not pbm.ping(mid):
+        return {"id": mid, "found": False}
+    try:
+        name = pbm.get_model_name(mid)
+    except RuntimeError as e:  # answers, but isn't a supported model
+        name = str(e)
+    return {"id": mid, "found": True, "name": name}
+
+
+def pbm_result(mid, result):
+    out = result.to_dict()
+    out["ok"] = True
+    out["id"] = mid
+    return out
+
+
+def handle_pbm(cmd, msg):
+    """pbm_* commands. Every one except pbm_ping needs "id"."""
+    if cmd == "pbm_ping":
+        if "id" in msg:
+            out = pbm_ping_one(msg["id"])
+            out["ok"] = True
+            respond(out)
+        else:
+            respond({"ok": True, "motors": [pbm_ping_one(m) for m in pbm.ids]})
+        return
+
+    if "id" not in msg:
+        respond({"error": f"{cmd} needs \"id\" (PBM ids: {list(pbm.ids)})"})
+        return
+    mid = msg["id"]
+
+    if cmd == "pbm_led":
+        if "on" in msg:
+            if msg["on"]:
+                pbm.led_on(mid)
+            else:
+                pbm.led_off(mid)
+        respond({"ok": True, "id": mid, "on": pbm.get_led_status(mid)})
+
+    elif cmd == "pbm_blink":
+        times = msg.get("times", 5)
+        pbm.blink(mid, times, msg.get("interval", 0.1))
+        respond({"ok": True, "id": mid, "times": times})
+
+    elif cmd == "pbm_torque":
+        if "on" in msg:
+            if msg["on"]:
+                pbm.torque_on(mid)
+            else:
+                pbm.torque_off(mid)
+        respond({"ok": True, "id": mid, "on": pbm.get_torque_status(mid)})
+
+    elif cmd == "pbm_position":
+        respond({"ok": True, "id": mid, "position": pbm.get_position(mid)})
+
+    elif cmd == "pbm_effort":
+        effort, unit = pbm.get_effort(mid)
+        respond({"ok": True, "id": mid, "effort": effort, "unit": unit})
+
+    elif cmd == "pbm_stop":
+        respond({"ok": True, "id": mid, "position": pbm.stop(mid)})
+
+    elif cmd == "pbm_move":
+        result = pbm.move(
+            mid, msg["position"],
+            stop_on_contact=msg.get("stop_on_contact", False),
+            wait=msg.get("wait", False),
+            timeout=msg.get("timeout", 1.0),
+            position_tolerance=msg.get("position_tolerance", 10),
+        )
+        respond(pbm_result(mid, result))
+
+    elif cmd == "pbm_tap":
+        result = pbm.tap(
+            mid, msg["from_position"], msg["to_position"],
+            stop_on_contact=msg.get("stop_on_contact", True),
+            hold=msg.get("hold", 0.05),
+            timeout=msg.get("timeout", 1.0),
+        )
+        respond(pbm_result(mid, result))
+
+    else:
+        respond({"error": f"unknown cmd: {cmd}"})
+
+
 # -- command handler --
 
 def handle(cmd_str):
@@ -390,6 +489,20 @@ def handle(cmd_str):
         respond({"ok": True, "surface_height": SURFACE_HEIGHT,
                  "safety_height": SAFETY_HEIGHT, "saved": saved})
 
+    elif cmd.startswith("pbm_"):
+        if pbm is None:
+            respond({"error": "PBM support not loaded (is pbm.py on the board?)"})
+            return
+        # catch everything: a bad PBM command must not stop the main loop
+        try:
+            handle_pbm(cmd, msg)
+        except KeyError as e:
+            respond({"error": f"{cmd} needs {e}"})
+        except (ValueError, RuntimeError) as e:
+            respond({"error": str(e)})
+        except Exception as e:
+            respond({"error": f"{cmd}: {type(e).__name__}: {e}"})
+
     else:
         respond({"error": f"unknown cmd: {cmd}"})
 
@@ -404,6 +517,15 @@ for mid in MOTOR_IDS:
         print(f"Motor {mid}: {info['name']} (model {info['model']})")
     except RuntimeError as e:
         print(e)
+
+# the PBM is optional, so a missing motor is only reported
+if pbm is not None:
+    for mid in pbm.ids:
+        try:
+            info = pbm_ping_one(mid)
+            print(f"PBM motor {mid}: {info.get('name', 'not found')}")
+        except Exception as e:
+            print(f"PBM motor {mid}: {e}")
 
 # enable motors and go home
 enable_motors(True)

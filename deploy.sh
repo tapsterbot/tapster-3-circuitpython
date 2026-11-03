@@ -7,7 +7,7 @@ set -e
 cd "$(dirname "$0")"
 
 # code.py last, so auto-reload sees the other files already in place
-FILES="config.json dynamixel.py kinematics.py motion.py hardware.py code.py"
+FILES="config.json dynamixel.py kinematics.py motion.py hardware.py pbm.py code.py"
 
 TARGET="${1:-}"
 if [ -z "$TARGET" ]; then

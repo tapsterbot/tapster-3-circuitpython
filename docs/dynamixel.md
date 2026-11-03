@@ -15,6 +15,8 @@ A summary of the parts of the ROBOTIS docs that this firmware depends on. Values
 | XC330-T288-T | 1220 | 288.35 : 1 | 1.00 N·m (0.88 A) | 71 rpm | 4 Mbps |
 | XC330-T181-T | 1210 | 180.62 : 1 | 0.80 N·m (0.88 A) | 113 rpm | 4 Mbps |
 
+The PBM (`pbm.py`) also supports the XL430-W250-T, model number 1060 (https://emanual.robotis.com/docs/en/dxl/x/xl430-w250/). Like the XC430, it has Present Load at address 126.
+
 All three motors have 4096 pulses/rev and the same Protocol 2.0. `Dynamixel.ping()` reads the model number from address 0, and the driver uses it to choose how to read address 126.
 
 ## Control table: addresses used by the firmware
