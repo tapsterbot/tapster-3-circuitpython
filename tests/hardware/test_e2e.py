@@ -10,6 +10,9 @@ Settings (environment variables):
     PBM_IDS            PBM motors to tap (default 4,5,6)
     PBM_FROM_POSITION  resting position (default 2000)
     PBM_TO_POSITION    pressed position (default 1000)
+    PBM_PARK           where to leave motors after their tap, as id:position
+                       pairs (default 5:1500); others stay at the resting
+                       position
 """
 
 import os
@@ -24,6 +27,9 @@ SQUARE = float(os.environ.get("SQUARE_SIZE", 20))
 PBM_IDS = [int(i) for i in os.environ.get("PBM_IDS", "4,5,6").split(",")]
 FROM = int(os.environ.get("PBM_FROM_POSITION", 2000))
 TO = int(os.environ.get("PBM_TO_POSITION", 1000))
+PARK = {int(k): int(v) for k, v in
+        (pair.split(":") for pair in
+         os.environ.get("PBM_PARK", "5:1500").split(",") if pair)}
 
 
 @pytest.fixture(scope="module")
@@ -67,10 +73,16 @@ def test_pbm_motors_answer(t):
 
 @pytest.mark.parametrize("mid", PBM_IDS)
 def test_pbm_tap(t, mid):
-    result = t.pbm.tap(mid, from_position=FROM, to_position=TO)
-    # with nothing in the way it reaches TO; on a button it stops early
-    assert result.contact or abs(result.position - TO) <= 10, result
-    assert abs(t.pbm.get_position(mid) - FROM) <= 10  # released
+    try:
+        result = t.pbm.tap(mid, from_position=FROM, to_position=TO)
+        # with nothing in the way it reaches TO; on a button it stops early
+        assert result.contact or abs(result.position - TO) <= 10, result
+        assert abs(t.pbm.get_position(mid) - FROM) <= 10  # released
+    finally:
+        if mid in PARK:  # even if the tap failed
+            t.pbm.move(mid, PARK[mid], wait=True)
+    if mid in PARK:
+        assert abs(t.pbm.get_position(mid) - PARK[mid]) <= 10
 
 
 def test_pbm_refuses_delta_motors(t):
