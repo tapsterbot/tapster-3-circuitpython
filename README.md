@@ -2,6 +2,8 @@
 
 Tapster 3 is a delta robot for tapping phone and tablet screens. It comes with its firmware already installed. You control it by sending simple JSON commands over USB serial, either with the included Python client or from any language that can open a serial port.
 
+New to Tapster? Start with the [tutorial](docs/tutorial.md): set up your computer and make the robot move, tap and press a button in about 15 minutes.
+
 Updating the firmware or working on the code? See [docs/development.md](docs/development.md).
 
 ## Quick Start
@@ -107,7 +109,7 @@ Set them by hand with the `surface` command, or measure them with `probe`. `prob
 
 ## Commands
 
-All parameters are optional unless noted. `speed` is a percentage from 1 (very slow) to 100 (fastest).
+All parameters are optional unless noted. `speed` is a percentage from 1 (slowest) to 100 (fastest).
 
 ### move
 
@@ -119,14 +121,14 @@ Moves in a straight line to `x`, `y`, `z`.
 {"cmd":"move","x":10,"y":10,"easing":"ease_in_out_cubic","step_size":2.0}
 ```
 
-- `x`, `y` default to 0, and `z` defaults to `safety_height`.
+- `x`, `y` default to 0, and `z` defaults to `safety_height`. `speed` defaults to 100.
 - `easing` sets how the motion speeds up and slows down: `linear` (default), `ease_in`, `ease_out`, `ease_in_out`, `ease_in_cubic`, `ease_out_cubic` or `ease_in_out_cubic`.
 - `step_size` is the spacing between waypoints in mm (default 5). Smaller values give smoother motion.
 - If any part of the line is out of reach, or would need a motor beyond `motor_min`/`motor_max` in `config.json`, the move is refused with an error and the robot doesn't move.
 
 #### Example: draw a square
 
-Traces a 100 mm square, slowly. Send each line after the previous one replies.
+Traces a 100 mm square at a low speed. Send each line after the previous one replies.
 
 ```json
 {"cmd":"move","x":-50,"y":50,"z":0,"speed":5}
@@ -142,15 +144,19 @@ Lifts up, travels in a smooth arc, and comes down at `x`, `y`, `z`. Use it to ge
 
 ```json
 {"cmd":"hop","x":30,"y":30}
-{"cmd":"hop","x":0,"y":0,"z":-20,"arc_height":50,"easing":"linear"}
+{"cmd":"hop","x":0,"y":0,"z":-20,"arc_height":20,"easing":"linear"}
 ```
 
 - `z` defaults to `safety_height`.
 - `speed` is the tip's speed as a percentage of `max_speed` in `config.json` (default 300 mm/s), so the default `speed` of 50 is 150 mm/s. The reply comes when the hop has finished.
-- `arc_height` is how far above the start and end the arc peaks, in mm (default 30).
+- `arc_height` is how far above the start and end the arc peaks, in mm. It defaults to `hop_arc_height` in `config.json`: 30 for a Tapster 3, 10 for a Tapster 3+.
 - `lift` is how far to rise straight up before the arc, in mm (default 5).
 - `easing` defaults to `ease_in_out`. The options are the same as for `move`.
-- If any part of the arc is out of reach, the hop is refused with an error and the robot doesn't move. On a Tapster 3+, the arm reaches only about 18 mm above home, so lower `arc_height` (or start lower) for hops near `z` 0.
+- If any part of the arc is out of reach, the hop is refused with an error and the robot doesn't move. A Tapster 3+ reaches only about 18 mm above home, which is why its default arc is lower. If a lower arc would work, the error says so, and `max_arc_height` gives the highest arc that fits:
+
+  ```json
+  {"error": "Unreachable position: arc_height 30 is too high here; the highest that fits is 14", "max_arc_height": 14.0}
+  ```
 
 ### tap
 
@@ -167,6 +173,7 @@ Moves to `safety_height` above the current position (or above `x`, `y` if given)
 - With `dz`, it presses to `safety_height + dz` instead.
 - `dx`, `dy` shift sideways during the press. `{"cmd":"tap","dx":-5,"dz":0}` pushes 5 mm sideways without going down, e.g. for a side button.
 - `speed` defaults to 75.
+- Without `dz`, `surface_height` must be below `safety_height`, or the tap is refused with an error.
 
 ### home
 

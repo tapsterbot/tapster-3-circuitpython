@@ -57,7 +57,13 @@ All three models use the same addresses, sizes and units, except where noted.
 
 ### Velocity Limit and `speed`
 
-`code.py` uses Profile Velocity values up to 1023, which is above every model's default Velocity Limit. So `speed: 100` runs at each model's Velocity Limit, and the XC330-T181 (510) will move faster than the others at high speeds. This hasn't been checked on hardware.
+How `code.py` sets Profile Velocity (address 112) depends on the command:
+
+- `move` and `home` always use 1023, which is above every model's default Velocity Limit, so the motors run at their Velocity Limit. `speed` only changes the pause between waypoints.
+- `hop` works out a Profile Velocity for each motor and each segment, so all three motors reach each waypoint together at the tip speed `speed` asks for (a percentage of `max_speed`). It's capped at 1023.
+- `tap` uses `speed_to_velocity()`, a curve from `speed` (1–100) to 1–1023.
+
+At 1023 the XC330-T181 (Velocity Limit 510) moves faster than the others. This hasn't been checked on hardware.
 
 ### Baud Rate (address 8)
 

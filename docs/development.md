@@ -23,7 +23,7 @@ sed -i '' 's/ubinascii/binascii/g' .venv/lib/python3.*/site-packages/ampy/files.
 On the board (`firmware/`):
 
 - `code.py`: main loop. Homes on boot and listens for JSON commands.
-- `config.json`: robot dimensions, bus baud rates, motor IDs, offsets, origin, heights, speed.
+- `config.json`: robot dimensions, bus baud rates, motor IDs and limits, PBM motor IDs, origin, heights, speeds and the default hop arc.
 - `hardware.py`: pin mapping for each board (ESP32 / Pico) and UART setup.
 - `dynamixel.py`: Dynamixel Protocol 2.0 driver with sync write.
 - `kinematics.py`: delta robot inverse and forward kinematics.
@@ -37,10 +37,12 @@ On your computer:
 - `Makefile`: `make test`, `make test-hw`, `make deploy`. Run `make` to list targets.
 - `tests/`: see [Tests](#tests).
 
-Reference (`docs/`):
+Docs, by [Diataxis](https://diataxis.fr/) type:
 
-- `dynamixel.md`: control-table addresses, model numbers and the XC430/XC330 differences, with links to the ROBOTIS e-manual.
-- `circuitpython-uart.md`: why the DIR pin is handled differently on the ESP32 and the Pico, with CircuitPython source excerpts.
+- Tutorial: [`docs/tutorial.md`](tutorial.md), a beginner's first 15 minutes with the robot.
+- Reference: the [README](../README.md) (commands and the Python client) and [`docs/dynamixel.md`](dynamixel.md) (control-table addresses, model numbers and the XC430/XC330 differences, with links to the ROBOTIS e-manual).
+- How-to and reference for working on the code: this guide.
+- Explanation: [`docs/circuitpython-uart.md`](circuitpython-uart.md), why the DIR pin is handled differently on the ESP32 and the Pico, with CircuitPython source excerpts.
 
 ## Deploying
 
@@ -64,36 +66,44 @@ done
 
 ## Configuration
 
-`firmware/config.json`:
+`firmware/config.json`, as it is in the repo (set up for a Tapster 3+):
 
 ```json
 {
-    "robot": "tapster3",
-    "e": 86.6025,
-    "f": 173.205,
-    "re": 133.5,
-    "rf": 70.0,
-    "dxl_baudrate": 3000000,
-    "cmd_baudrate": 115200,
-    "motor_ids": [1, 2, 3],
-    "motor_offsets": [2048, 2048, 2048],
-    "motor_direction": [1, 1, 1],
-    "motor_min": 1024,
-    "motor_max": 3072,
-    "pbm_ids": [4, 5, 6],
-    "speed": 100,
-    "max_speed": 300,
-    "origin": [0, 0, -120],
-    "safety_height": 0,
-    "surface_height": -10
+  "robot": "tapster3",
+  "e": 86.6025,
+  "f": 173.205,
+  "re": 223.5,
+  "rf": 70.0,
+  "dxl_baudrate": 3000000,
+  "cmd_baudrate": 115200,
+  "motor_ids": [1, 2, 3],
+  "motor_offsets": [2048, 2048, 2048],
+  "motor_direction": [1, 1, 1],
+  "motor_min": 1024,
+  "motor_max": 3072,
+  "pbm_ids": [4, 5, 6],
+  "speed": 100,
+  "max_speed": 300,
+  "hop_arc_height": 10,
+  "origin": [0, 0, -170],
+  "safety_height": 0,
+  "surface_height": -10
 }
 ```
 
-- `re`: lower arm length. Tapster 3: `133.5`, Tapster 3+: `223.5`.
+For a Tapster 3, change `re`, `origin` and `hop_arc_height` as shown below.
+
+- `robot`: a label. The firmware doesn't read it.
+- `e`, `f`, `rf`, `re`: effector and base triangle sides, upper and lower arm lengths, in mm. Only `re` differs by model. Tapster 3: `133.5`, Tapster 3+: `223.5`.
 - `dxl_baudrate`: motor bus speed. It must match the motors' Baud Rate register.
 - `cmd_baudrate`: speed of the command UART on the header pins. USB serial is separate.
-- `origin`: kinematic position that becomes the user `(0, 0, 0)`.
+- `motor_min`, `motor_max`: allowed motor positions. `move` and `hop` refuse any point that needs a motor outside them. `tap`, `probe` and the startup move home clamp to them instead.
+- `origin`: kinematic position that becomes the user `(0, 0, 0)`. Tapster 3: `[0, 0, -120]`, Tapster 3+: `[0, 0, -170]`.
+- `speed`: default `speed` for `move` and `home` (1–100).
 - `max_speed`: tip speed in mm/s for `hop` at `speed` 100. `speed` scales it linearly. `move` doesn't use it yet.
+- `hop_arc_height`: default `hop` arc in mm. Tapster 3: `30`, Tapster 3+: `10` (it reaches only about 18 mm above home). 30 if missing.
+- `safety_height`, `surface_height`: the tapping heights (see the README). `probe` and `surface` update them.
 - `pbm_ids`: Dynamixel IDs of the PBM motors. PBM commands refuse any other ID. Defaults to `[4, 5, 6]` if missing.
 - `board`, `pins`: optional overrides (see [Pinout](#pinout)).
 
@@ -150,7 +160,7 @@ The three models share the control table except at address 126. On the XC430 it'
 ## Tests
 
 ```bash
-make test                          # unit + integration, no hardware, ~12 s
+make test                          # unit + integration, no hardware, ~20 s
 make test-hw                       # on a connected robot: MOVES IT
 make test-hw PORT=/dev/cu.usbmodem2101 PBM_TO_POSITION=1200
 make test ARGS="-k hop -v"         # extra pytest arguments
@@ -158,9 +168,10 @@ make test ARGS="-k hop -v"         # extra pytest arguments
 
 - `tests/unit/`: each firmware module and the client on its own. `dynamixel.py` and `pbm.py` run against simulated motors that speak Protocol 2.0 bytes (CRC checked independently of the driver's table).
 - `tests/integration/`: the real `code.py`, main loop included, with the real `hardware.py`, `dynamixel.py` and `pbm.py`, driven by the real `tapster.py` client over a fake serial port (both the USB console and the command UART). Runs as a Pico and as an ESP32, with Tapster 3 and 3+ geometry. Every test also checks that the firmware's main loop is still running and that it sent only valid packets.
-- `tests/hardware/test_e2e.py`: draws a small square at `safety_height`, taps once at home (down to `surface_height`), then taps each PBM motor from `PBM_FROM_POSITION` (default 2000) to `PBM_TO_POSITION` (default 1000) and checks it was released. Motors listed in `PBM_PARK` (default `5:1500`) are then moved to that position. Skipped unless run with `--hardware`, which `make test-hw` does. Also reads `TAPSTER_PORT`, `SQUARE_SIZE` and `PBM_IDS`.
+- `tests/integration/test_tutorial.py`: runs every `>>>` step of [the tutorial](tutorial.md) against the simulated robot, so the tutorial can't silently go out of date.
+- `tests/hardware/test_e2e.py`: draws a small square at `safety_height` with straight moves, then again with hops, taps once at home (down to `surface_height`), then taps each PBM motor from `PBM_FROM_POSITION` (default 2000) to `PBM_TO_POSITION` (default 1000) and checks it was released. Motors listed in `PBM_PARK` (default `5:1500`) are then moved to that position. Skipped unless run with `--hardware`, which `make test-hw` does. Also reads `TAPSTER_PORT`, `SQUARE_SIZE` and `PBM_IDS`.
 
-Tests marked `xfail` document known bugs that haven't been fixed yet. Once a bug is fixed, its test starts passing, and pytest reports that as a failure until the `xfail` mark is removed.
+If a known bug can't be fixed straight away, mark its test `xfail`: `make test` then shows it as `x` and still succeeds. The marks are strict, so once the bug is fixed and the test passes, pytest reports a failure until the mark is removed.
 
 `tests/fakes.py` has the simulated motors, the fake serial port and the firmware runner. The simulated bus records every packet, so tests can check exactly what reached the motors.
 

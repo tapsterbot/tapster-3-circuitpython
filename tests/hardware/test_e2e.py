@@ -1,5 +1,5 @@
-"""End to end on a real robot: draws a small square, taps once at home, then
-taps each PBM motor.
+"""End to end on a real robot: draws a small square with straight moves, then
+again with hops, taps once at home, then taps each PBM motor.
 
 MOVES THE ROBOT. Clear the area under the tip and around the PBM first.
 Run with `make test-hw` (or `make test-hw PORT=/dev/cu.usbmodem2101`).
@@ -46,13 +46,27 @@ def test_delta_motors_answer(t):
     assert len(resp["motors"]) == 3
 
 
+def square_corners():
+    h = SQUARE / 2
+    return [(-h, h), (h, h), (h, -h), (-h, -h), (-h, h)]
+
+
 def test_draw_square(t):
     z = t.safety_height  # in the air, above any screen
-    h = SQUARE / 2
-    corners = [(-h, h), (h, h), (h, -h), (-h, -h), (-h, h)]
     assert t.home(speed=50)["ok"]
-    for x, y in corners:
+    for x, y in square_corners():
         resp = t.move(x=x, y=y, z=z, speed=30)
+        assert resp == {"ok": True, "target": {"x": x, "y": y, "z": z}}, resp
+        assert t.position == (x, y, z)
+    assert t.home(speed=50)["ok"]
+
+
+def test_hop_square(t):
+    # the same square, hopping between corners with the robot's default arc
+    z = t.safety_height
+    assert t.home(speed=50)["ok"]
+    for x, y in square_corners():
+        resp = t.hop(x=x, y=y, z=z)
         assert resp == {"ok": True, "target": {"x": x, "y": y, "z": z}}, resp
         assert t.position == (x, y, z)
     assert t.home(speed=50)["ok"]
