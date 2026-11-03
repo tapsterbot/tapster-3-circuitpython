@@ -24,6 +24,7 @@ On the board (`firmware/`):
 
 - `code.py`: main loop. Homes on boot and listens for JSON commands.
 - `config.json`: robot dimensions, bus baud rates, motor IDs and limits, PBM motor IDs, origin, heights, speeds and the default hop arc.
+- `config.json.t3`, `config.json.t3plus`: example `config.json` for each model (see [Configuration](#configuration)). Not deployed.
 - `hardware.py`: pin mapping for each board (ESP32 / Pico) and UART setup.
 - `dynamixel.py`: Dynamixel Protocol 2.0 driver with sync write.
 - `kinematics.py`: delta robot inverse and forward kinematics.
@@ -66,43 +67,40 @@ done
 
 ## Configuration
 
-`firmware/config.json`, as it is in the repo (set up for a Tapster 3+):
+`firmware/config.json` is the configuration that gets deployed. Next to it are complete examples for each model:
 
-```json
-{
-  "robot": "tapster3",
-  "e": 86.6025,
-  "f": 173.205,
-  "re": 223.5,
-  "rf": 70.0,
-  "dxl_baudrate": 3000000,
-  "cmd_baudrate": 115200,
-  "motor_ids": [1, 2, 3],
-  "motor_offsets": [2048, 2048, 2048],
-  "motor_direction": [1, 1, 1],
-  "motor_min": 1024,
-  "motor_max": 3072,
-  "pbm_ids": [4, 5, 6],
-  "speed": 100,
-  "max_speed": 300,
-  "hop_arc_height": 10,
-  "origin": [0, 0, -170],
-  "safety_height": 0,
-  "surface_height": -10
-}
+| File | Robot |
+|---|---|
+| `firmware/config.json.t3` | Tapster 3 |
+| `firmware/config.json.t3plus` | Tapster 3+ |
+
+To set up a robot, copy its example over `config.json`, then deploy:
+
+```bash
+cp firmware/config.json.t3 firmware/config.json
+./deploy.sh
 ```
 
-For a Tapster 3, change `re`, `origin` and `hop_arc_height` as shown below.
+The repo's `config.json` is currently the Tapster 3+ example. The two examples differ only in these keys:
 
-- `robot`: a label. The firmware doesn't read it.
-- `e`, `f`, `rf`, `re`: effector and base triangle sides, upper and lower arm lengths, in mm. Only `re` differs by model. Tapster 3: `133.5`, Tapster 3+: `223.5`.
+| Key | Tapster 3 | Tapster 3+ |
+|---|---|---|
+| `robot` | `"tapster3"` | `"tapster3plus"` |
+| `re` | `133.5` | `223.5` |
+| `origin` | `[0, 0, -120]` | `[0, 0, -170]` |
+| `hop_arc_height` | `30` | `10` |
+
+`make test` checks that both examples have the same keys as `config.json`, and differ only in those four. Every key:
+
+- `robot`: a label, `tapster3` or `tapster3plus`. The firmware doesn't read it.
+- `e`, `f`, `rf`, `re`: effector and base triangle sides, upper and lower arm lengths, in mm. Only `re` differs by model.
 - `dxl_baudrate`: motor bus speed. It must match the motors' Baud Rate register.
 - `cmd_baudrate`: speed of the command UART on the header pins. USB serial is separate.
 - `motor_min`, `motor_max`: allowed motor positions. `move` and `hop` refuse any point that needs a motor outside them. `tap`, `probe` and the startup move home clamp to them instead.
-- `origin`: kinematic position that becomes the user `(0, 0, 0)`. Tapster 3: `[0, 0, -120]`, Tapster 3+: `[0, 0, -170]`.
+- `origin`: kinematic position that becomes the user `(0, 0, 0)`.
 - `speed`: default `speed` for `move` and `home` (1–100).
 - `max_speed`: tip speed in mm/s for `hop` at `speed` 100. `speed` scales it linearly. `move` doesn't use it yet.
-- `hop_arc_height`: default `hop` arc in mm. Tapster 3: `30`, Tapster 3+: `10` (it reaches only about 18 mm above home). 30 if missing.
+- `hop_arc_height`: default `hop` arc in mm. 30 if missing. The Tapster 3+ uses 10 because it reaches only about 18 mm above home.
 - `safety_height`, `surface_height`: the tapping heights (see the README). `probe` and `surface` update them.
 - `pbm_ids`: Dynamixel IDs of the PBM motors. PBM commands refuse any other ID. Defaults to `[4, 5, 6]` if missing.
 - `board`, `pins`: optional overrides (see [Pinout](#pinout)).

@@ -310,19 +310,17 @@ def pbm_motors():
             FakeMotor(6, model=1080, speed=4000)]
 
 
-# Geometry that differs between models; everything else is shared.
-# From docs/development.md. config.json in the repo is set up for the 3+.
+# The example config for each robot model, next to firmware/config.json.
 ROBOTS = {
-    "tapster3": {"re": 133.5, "origin": [0, 0, -120], "hop_arc_height": 30},
-    "tapster3plus": {"re": 223.5, "origin": [0, 0, -170], "hop_arc_height": 10},
+    "tapster3": FIRMWARE / "config.json.t3",
+    "tapster3plus": FIRMWARE / "config.json.t3plus",
 }
 
 
 def load_config(robot=None, **overrides):
-    """firmware/config.json, optionally with a robot model's geometry."""
-    config = json.loads((FIRMWARE / "config.json").read_text())
-    if robot is not None:
-        config.update(ROBOTS[robot])
+    """firmware/config.json, or a robot model's example config."""
+    path = FIRMWARE / "config.json" if robot is None else ROBOTS[robot]
+    config = json.loads(path.read_text())
     config.update(overrides)
     return config
 
