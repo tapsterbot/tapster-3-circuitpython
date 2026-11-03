@@ -187,11 +187,19 @@ class Tapster:
             self.ser.timeout = old_timeout
 
     def move(self, x=0, y=0, z=0, speed=100, easing="linear", step_size=5.0):
+        """Move in a straight line to (x, y, z), in mm.
+
+        speed: 1-100, a percentage; 100 (the default) is the fastest.
+        """
         return self.send({"cmd": "move", "x": x, "y": y, "z": z,
                           "speed": speed, "easing": easing,
                           "step_size": step_size})
 
     def tap(self, x=None, y=None, dx=0, dy=0, dz=None, speed=75):
+        """Tap at the current position, or above (x, y) if given.
+
+        speed: 1-100, a percentage; 100 is the fastest.
+        """
         cmd = {"cmd": "tap", "dx": dx, "dy": dy, "speed": speed}
         if x is not None:
             cmd["x"] = x
@@ -201,18 +209,26 @@ class Tapster:
             cmd["dz"] = dz
         return self.send(cmd)
 
-    def hop(self, x=0, y=0, z=None, speed=50, arc_height=30, lift=5,
+    def hop(self, x=0, y=0, z=None, speed=50, arc_height=None, lift=5,
             easing="ease_in_out"):
-        cmd = {"cmd": "hop", "x": x, "y": y,
-               "speed": speed, "arc_height": arc_height, "lift": lift}
+        """Hop in an arc to (x, y, z), in mm.
+
+        speed: 1-100, a percentage of the robot's max_speed (config.json,
+            300 mm/s by default); 100 is the fastest.
+        arc_height: defaults to the robot's hop_arc_height (config.json).
+        """
+        cmd = {"cmd": "hop", "x": x, "y": y, "speed": speed, "lift": lift}
         if z is not None:
             cmd["z"] = z
+        if arc_height is not None:
+            cmd["arc_height"] = arc_height
         if easing is not None:
             cmd["easing"] = easing
         # slow hops can take far longer than send()'s 3 s reply window
         return self.send_wait(cmd, timeout=60)
 
     def home(self, speed=100):
+        """Move back to (0, 0, 0). speed: 1-100, a percentage."""
         return self.send({"cmd": "home", "speed": speed})
 
     def status(self):

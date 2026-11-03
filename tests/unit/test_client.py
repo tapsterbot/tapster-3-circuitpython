@@ -77,6 +77,14 @@ def test_motion_methods_return_the_reply(client):
     assert t.tap() == {"error": "nope"}
 
 
+def test_hop_leaves_arc_height_to_the_robot_unless_given(client):
+    t, port = client({"hop": ['{"ok": true}']})
+    t.hop(x=10)
+    assert "arc_height" not in port.sent[-1]
+    t.hop(x=10, arc_height=12)
+    assert port.sent[-1]["arc_height"] == 12
+
+
 def test_probe_prints_progress_and_returns_height(client, capsys):
     t, _ = client({"probe": ["z=-1.0  load=0,0,0  avg=0.0",
                              '{"ok": true, "surface_height": -22}']})

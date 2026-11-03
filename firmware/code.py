@@ -46,6 +46,7 @@ MOTOR_OFFSETS = config["motor_offsets"]
 MOTOR_DIRECTION = config["motor_direction"]
 SPEED = config.get("speed", 100)
 MAX_SPEED = config.get("max_speed", 300)  # tip speed in mm/s at speed 100 (hop)
+HOP_ARC_HEIGHT = config.get("hop_arc_height", 30)  # default hop arc, mm
 SAFETY_HEIGHT = config.get("safety_height", 0)
 SURFACE_HEIGHT = config.get("surface_height", 0)
 MOTOR_MIN = config.get("motor_min", 1024)
@@ -173,16 +174,19 @@ def profile_velocity(ticks, seconds):
     return max(1, min(1023, int(rpm / 0.229) + 1))
 
 
-def follow(waypoints, speed):
-    """Drive the tip through waypoints at `speed` % of max_speed (mm/s).
+def plan(waypoints):
+    """[(waypoint, motor positions)]. Raises ValueError if any is out of reach."""
+    return [(w, motor_positions(*w)) for w in waypoints]
 
-    The whole path is checked before anything moves. For each segment, every
-    motor's Profile Velocity is set so that all three reach the waypoint
-    together, just as the next one is sent.
+
+def follow(targets, speed):
+    """Drive the tip through planned targets at `speed` % of max_speed (mm/s).
+
+    For each segment, every motor's Profile Velocity is set so that all
+    three reach the waypoint together, just as the next one is sent.
     """
     mm_per_s = MAX_SPEED * max(1, min(100, speed)) / 100.0
     here = tuple(current_pos)
-    targets = [(w, motor_positions(*w)) for w in waypoints]
     last = motor_positions(*here, strict=False)  # where the motors are now
     due = time.monotonic_ns()
     for w, positions in targets:
@@ -199,20 +203,60 @@ def follow(waypoints, speed):
         here, last = w, positions
 
 
-def hop_to(x, y, z, speed=None, arc_height=30, easing="ease_in_out", lift=5):
+class ArcTooHigh(ValueError):
+    """A hop that fits only with a lower arc.
+    args: (message, highest arc_height that fits)"""
+
+
+def highest_arc(start, end, lift, easing, too_high):
+    """Highest arc_height, to 0.5 mm, below too_high that makes the hop
+    reachable, or None if even a flat hop (arc 0) isn't."""
+    def fits(arc):
+        try:
+            plan(hop(start, end, arc, lift=lift, easing=easing))
+            return True
+        except ValueError:
+            return False
+
+    if not fits(0):
+        return None
+    lo, hi = 0.0, float(too_high)
+    while hi - lo > 0.25:
+        mid = (lo + hi) / 2
+        if fits(mid):
+            lo = mid
+        else:
+            hi = mid
+    return int(lo * 2) / 2.0  # round down to 0.5 mm
+
+
+def hop_to(x, y, z, speed=None, arc_height=None, easing="ease_in_out", lift=5):
     """Hop in a smooth arc from current position to (x, y, z).
 
     speed: 1-100, % of max_speed (config.json, mm/s)
     arc_height: mm above the higher of start/end at the peak
+        (default hop_arc_height from config.json)
     easing: easing function for XY movement
     lift: mm to rise straight up before the arc
-    Raises ValueError, without moving, if any part of the arc is unreachable.
+    Raises ValueError, without moving, if any part of the arc is out of
+    reach: ArcTooHigh if a lower arc would work.
     """
     if speed is None:
         speed = SPEED
+    if arc_height is None:
+        arc_height = HOP_ARC_HEIGHT
     start = tuple(current_pos)
     end = (x, y, z)
-    follow(list(hop(start, end, arc_height, lift=lift, easing=easing)), speed)
+    try:
+        targets = plan(hop(start, end, arc_height, lift=lift, easing=easing))
+    except ValueError:
+        best = highest_arc(start, end, lift, easing, arc_height)
+        if best is None:
+            raise  # the target or the lift is out of reach, not the arc
+        raise ArcTooHigh(
+            "Unreachable position: arc_height %g is too high here; "
+            "the highest that fits is %g" % (arc_height, best), best)
+    follow(targets, speed)
     current_pos[0] = x
     current_pos[1] = y
     current_pos[2] = z
@@ -489,11 +533,13 @@ def handle(cmd_str):
         z = msg.get("z", SAFETY_HEIGHT)
         speed = msg.get("speed", 50)
         lift = msg.get("lift", 5)
-        arc_height = msg.get("arc_height", 30)
+        arc_height = msg.get("arc_height", HOP_ARC_HEIGHT)
         easing = msg.get("easing", "ease_in_out")
         try:
             hop_to(x, y, z, speed, arc_height, easing, lift)
             respond({"ok": True, "target": {"x": x, "y": y, "z": z}})
+        except ArcTooHigh as e:
+            respond({"error": e.args[0], "max_arc_height": e.args[1]})
         except ValueError as e:
             respond({"error": str(e)})
 

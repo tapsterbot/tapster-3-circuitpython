@@ -313,8 +313,8 @@ def pbm_motors():
 # Geometry that differs between models; everything else is shared.
 # From docs/development.md. config.json in the repo is set up for the 3+.
 ROBOTS = {
-    "tapster3": {"re": 133.5, "origin": [0, 0, -120]},
-    "tapster3plus": {"re": 223.5, "origin": [0, 0, -170]},
+    "tapster3": {"re": 133.5, "origin": [0, 0, -120], "hop_arc_height": 30},
+    "tapster3plus": {"re": 223.5, "origin": [0, 0, -170], "hop_arc_height": 10},
 }
 
 

@@ -226,12 +226,28 @@ def test_hop_sets_each_motors_velocity_to_arrive_together(make_robot):
         assert max(vel.values()) < 1023
 
 
-def test_unreachable_hop_is_refused_before_moving(make_robot):
+def test_too_high_hop_is_refused_with_an_arc_that_fits(make_robot):
     r = make_robot(robot="tapster3plus")
     mark = r.mark()
-    assert "Unreachable" in r.t.hop(x=30, y=30)["error"]  # 30 mm arc: too high
-    assert r.bus.sync_goals[mark:] == []
+    resp = r.t.hop(x=30, y=30, arc_height=30)
+    best = resp["max_arc_height"]
+    assert resp["error"] == (
+        "Unreachable position: arc_height 30 is too high here; "
+        f"the highest that fits is {best:g}")
+    assert 10 < best < 30 and best * 2 == int(best * 2)  # 0.5 mm steps
+    assert r.bus.sync_goals[mark:] == []  # nothing moved
     assert r.t.position == (0, 0, 0)
+    # the suggestion is the highest that works, within 1 mm
+    assert "max_arc_height" in r.t.hop(x=30, y=30, arc_height=best + 1)
+    assert r.t.hop(x=30, y=30, arc_height=best)["ok"]
+    assert r.xyz() == approx(30, 30, 0)
+
+
+def test_hop_to_an_unreachable_target_has_no_arc_suggestion(make_robot):
+    r = make_robot(robot="tapster3plus")
+    resp = r.t.hop(x=999, y=0)
+    assert resp["error"].startswith(("Unreachable", "Out of reach"))
+    assert "max_arc_height" not in resp
 
 
 def test_low_hop_on_tapster3plus(make_robot):
@@ -240,12 +256,19 @@ def test_low_hop_on_tapster3plus(make_robot):
     assert r.xyz() == approx(30, 30, 0)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Tapster 3+ config reaches only ~18 mm above home, so the default "
-    "30 mm hop arc from z=0 is out of reach (it's refused)"))
-def test_default_hop_on_tapster3plus(make_robot):
-    r = make_robot(robot="tapster3plus")
+@pytest.mark.parametrize("model,peak", [("tapster3", 32.5), ("tapster3plus", 12.5)])
+def test_default_hop_uses_the_robots_arc_height(make_robot, model, peak):
+    # peak = halfway between the 5 mm lift and the end, plus hop_arc_height
+    r = make_robot(robot=model)
+    mark = r.mark()
     assert r.t.hop(x=30, y=30)["ok"]
+    assert max(z for _, _, z in r.path(mark)) == pytest.approx(peak, abs=0.5)
+    assert r.xyz() == approx(30, 30, 0)
+
+
+def test_default_hop_with_the_shipped_config(robot):
+    # firmware/config.json as it is in the repo
+    assert robot.t.hop(x=30, y=30)["ok"]
 
 
 # -- heights and probing --------------------------------------------------
