@@ -287,7 +287,7 @@ def test_probe_finds_the_surface(robot):
         return 100 if robot.xyz()[2] <= -22.5 else 0
     for mid in (1, 2, 3):
         robot.motor(mid).effort_fn = load
-    assert robot.t.probe(threshold=5) == -22
+    assert robot.t.probe() == -22  # the firmware's default threshold, 5 %
     assert (robot.t.surface_height, robot.t.safety_height) == (-22, -12)
     assert robot.xyz() == approx(0, 0, 0)
 

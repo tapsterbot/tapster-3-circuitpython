@@ -246,12 +246,17 @@ class Tapster:
     def blink(self, motor_id=1, count=3):
         return self.send({"cmd": "blink", "id": motor_id, "count": count})
 
-    def probe(self, threshold=3.0, step=1.0, max_depth=80):
+    def probe(self, threshold=None, step=1.0, max_depth=80):
         """Probe for surface by descending until load threshold is hit.
         Returns the detected surface height or None.
+
+        threshold: motor load (%) that counts as touching. Defaults to the
+            robot's own default (5 %).
         """
-        resp = self.send_wait({"cmd": "probe", "threshold": threshold,
-                               "step": step, "max_depth": max_depth})
+        cmd = {"cmd": "probe", "step": step, "max_depth": max_depth}
+        if threshold is not None:
+            cmd["threshold"] = threshold
+        resp = self.send_wait(cmd)
         if resp and "surface_height" in resp:
             return resp["surface_height"]
         return None

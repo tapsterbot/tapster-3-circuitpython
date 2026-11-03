@@ -92,6 +92,14 @@ def test_probe_prints_progress_and_returns_height(client, capsys):
     assert "z=-1.0" in capsys.readouterr().out
 
 
+def test_probe_leaves_threshold_to_the_robot_unless_given(client):
+    t, port = client({"probe": ['{"ok": true, "surface_height": -22}']})
+    t.probe()
+    assert "threshold" not in port.sent[-1]
+    t.probe(threshold=3)
+    assert port.sent[-1]["threshold"] == 3
+
+
 def test_pbm_is_attached(client):
     t, _ = client({})
     assert isinstance(t.pbm, PBM)
