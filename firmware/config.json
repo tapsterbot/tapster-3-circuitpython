@@ -1,0 +1,22 @@
+{
+  "robot": "tapster3",
+
+  "e": 86.6025,
+  "f": 173.205,
+  "re": 223.5,
+  "rf": 70.0,
+
+  "dxl_baudrate": 3000000,
+  "cmd_baudrate": 115200,
+
+  "motor_ids": [1, 2, 3],
+  "motor_offsets": [2048, 2048, 2048],
+  "motor_direction": [1, 1, 1],
+  "motor_min": 1024,
+  "motor_max": 3072,
+
+  "speed": 100,
+  "origin": [0, 0, -170],
+  "safety_height": 0,
+  "surface_height": -10
+}

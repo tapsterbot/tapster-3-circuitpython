@@ -1,0 +1,211 @@
+# Development
+
+This guide covers working on the Tapster 3 firmware: setting up, deploying, configuration, hardware and debugging. If you just want to use the robot, see the [README](../README.md).
+
+The firmware is CircuitPython and runs on an ESP32 DevKitC V4 (WROOM-32D/32E) or a Raspberry Pi Pico (RP2040) on a carrier board. The same files run on both, and the board is detected automatically. The motors are Dynamixel XC430-W240-T, XC330-T288-T or XC330-T181-T (Protocol 2.0).
+
+## Setup
+
+```bash
+brew install tio
+python3 -m venv .venv
+source .venv/bin/activate
+pip install adafruit-ampy pyserial
+```
+
+Patch ampy for CircuitPython compatibility (it's only needed for the ESP32):
+
+```bash
+sed -i '' 's/ubinascii/binascii/g' .venv/lib/python3.*/site-packages/ampy/files.py
+```
+
+## Files
+
+On the board (`firmware/`):
+
+- `code.py`: main loop. Homes on boot and listens for JSON commands.
+- `config.json`: robot dimensions, bus baud rates, motor IDs, offsets, origin, heights, speed.
+- `hardware.py`: pin mapping for each board (ESP32 / Pico) and UART setup.
+- `dynamixel.py`: Dynamixel Protocol 2.0 driver with sync write.
+- `kinematics.py`: delta robot inverse and forward kinematics.
+- `motion.py`: linear interpolation, parabolic arcs and easing functions.
+
+On your computer:
+
+- `tapster.py`: Python client (see the README).
+- `deploy.sh`: uploads `firmware/` to the board.
+
+Reference (`docs/`):
+
+- `dynamixel.md`: control-table addresses, model numbers and the XC430/XC330 differences, with links to the ROBOTIS e-manual.
+- `circuitpython-uart.md`: why the DIR pin is handled differently on the ESP32 and the Pico, with CircuitPython source excerpts.
+
+## Deploying
+
+```bash
+./deploy.sh                         # auto-detect
+./deploy.sh /dev/cu.usbserial-210   # ESP32, over serial with ampy
+./deploy.sh /Volumes/CIRCUITPY      # Pico, copied to the USB drive
+```
+
+The ESP32 has no native USB, so files go over serial with ampy. The Pico mounts a `CIRCUITPY` drive, so files are just copied (ampy can't write there). If `CIRCUITPY` is mounted, `deploy.sh` uses it. Otherwise it looks for a `usbserial` port.
+
+Deploying copies `config.json` too, which overwrites any heights saved on the board.
+
+Or manually (ESP32):
+
+```bash
+for f in config.json dynamixel.py kinematics.py motion.py hardware.py code.py; do
+    ampy --port /dev/cu.usbserial-210 put firmware/$f
+done
+```
+
+## Configuration
+
+`firmware/config.json`:
+
+```json
+{
+    "robot": "tapster3",
+    "e": 86.6025,
+    "f": 173.205,
+    "re": 133.5,
+    "rf": 70.0,
+    "dxl_baudrate": 3000000,
+    "cmd_baudrate": 115200,
+    "motor_ids": [1, 2, 3],
+    "motor_offsets": [2048, 2048, 2048],
+    "motor_direction": [1, 1, 1],
+    "motor_min": 1024,
+    "motor_max": 3072,
+    "speed": 100,
+    "origin": [0, 0, -120],
+    "safety_height": 0,
+    "surface_height": -10
+}
+```
+
+- `re`: lower arm length. Tapster 3: `133.5`, Tapster 3+: `223.5`.
+- `dxl_baudrate`: motor bus speed. It must match the motors' Baud Rate register.
+- `cmd_baudrate`: speed of the command UART on the header pins. USB serial is separate.
+- `origin`: kinematic position that becomes the user `(0, 0, 0)`.
+- `board`, `pins`: optional overrides (see [Pinout](#pinout)).
+
+### Calibration
+
+`motor_offsets` is the servo position (1024–3072) at which each arm is horizontal (0°). `motor_direction` (1 or -1) sets each motor's rotation direction. Adjust them per motor until the robot homes correctly.
+
+## Hardware
+
+### Device
+
+```
+ESP32: /dev/cu.usbserial-210
+Pico:  /dev/cu.usbmodem*   (drive: /Volumes/CIRCUITPY)
+```
+
+### Pinout
+
+| Function           | ESP32 | Pico GPIO (physical pin) |
+|--------------------|-------|--------------------------|
+| Dynamixel TX       | IO4   | GP4 (6)  — UART1 TX      |
+| Dynamixel RX       | IO13  | GP5 (7)  — UART1 RX      |
+| Dynamixel DIR      | IO17  | GP6 (9)                  |
+| Host TX (board RX) | IO32  | GP1 (2)  — UART0 RX      |
+| Host RX (board TX) | IO33  | GP0 (1)  — UART0 TX      |
+
+The Pico carrier board routes each Pico pin to the DevKitC header position of the matching ESP32 pin. On the RP2040, a UART's TX and RX must be on the same UART instance, which is why the Pico numbers differ from the ESP32 ones.
+
+Pins live in `firmware/hardware.py`. To override any of them without editing code, add a `pins` object to `config.json` (only the keys you list change). You can also force the profile with `board`:
+
+```json
+"board": "pico",
+"pins": {"dxl_dir": "GP17"}
+```
+
+On the Pico, the UART drives the DIR pin itself (`rs485_dir`). The ESP32 keeps the GPIO toggle. See [circuitpython-uart.md](circuitpython-uart.md) for why.
+
+### Saving config on the Pico
+
+While `CIRCUITPY` is mounted over USB, it is read-only to the firmware. `probe` and `surface` still update the heights in memory, but they can't save them to `config.json`. The `surface` response then includes `"saved": false`. Copy the values into `firmware/config.json` and redeploy.
+
+### Motor settings
+
+- Baud rate: 3000000 (`dxl_baudrate`)
+- Return Delay Time: 250 (500 µs)
+- Motor IDs: 1, 2, 3
+- Position range: 1024–3072 (90°–270°)
+- Model: XC430-W240-T, XC330-T288-T or XC330-T181-T (detected by ping)
+
+The three models share the control table except at address 126. On the XC430 it's Present Load (0.1 %). On the XC330 it's Present Current (1 mA). `get_load()` returns a percentage for both. On the XC330 it's Present Current as a percentage of Current Limit (address 38, default 910 mA). The two percentages aren't physically identical, so the `probe` threshold may need retuning on XC330 motors. `get_current()` returns raw mA on XC330s. Details in [dynamixel.md](dynamixel.md).
+
+## Serial Console and Board REPL
+
+```bash
+tio -e /dev/cu.usbserial-210   # ESP32
+tio -e /dev/cu.usbmodem*       # Pico
+```
+
+- **JSON console:** while `code.py` is running, type a JSON command and press Enter. `-e` turns on local echo, because the firmware doesn't echo input.
+- **CircuitPython REPL:** press `Ctrl+C` to stop `code.py`, then any key to get the `>>>` prompt. Turn local echo off with `Ctrl+T` then `e`, because the REPL echoes for itself.
+- `Ctrl+D` at the `>>>` prompt soft-reloads and restarts `code.py`.
+- Exit tio with `Ctrl+T` then `Q`. Close it before using ampy or `tapster.py`.
+
+### REPL quick start
+
+At the board's `>>>` prompt:
+
+```python
+from hardware import dynamixel_bus
+
+dxl = dynamixel_bus()          # pins and dxl_baudrate from /config.json
+
+dxl.ping(1)                    # {'model': 1080, 'name': 'XC430-W240', 'firmware': 50}
+dxl.set_led(1, True)
+dxl.get_position(1)            # 2048
+dxl.get_temperature(1)         # 36
+dxl.get_load(1)                # 0.0 (%)
+dxl.get_current(1)             # 12 (mA, XC330 only)
+dxl.get_voltage(1)             # 120 (12.0V)
+dxl.get_profile_velocity(1)    # 100
+```
+
+Using kinematics and motion directly:
+
+```python
+from kinematics import DeltaKinematics
+from motion import interpolate
+
+dk = DeltaKinematics(f=173.205, e=86.6025, rf=70.0, re=133.5)
+dk.inverse(0, 0, -120)        # (theta1, theta2, theta3)
+dk.forward(0, 0, 0)           # (x, y, z)
+
+for x, y, z in interpolate((0, 0, 0), (30, 30, 0), steps=20, easing="ease_in_out"):
+    print(f"{x:.1f}, {y:.1f}, {z:.1f}")
+```
+
+### Raw packets
+
+Packets use the Protocol 2.0 format: `FF FF FD 00 [ID] [LEN_L] [LEN_H] [INST] [PARAMS...] [CRC_L] [CRC_H]`.
+
+```python
+import time
+from hardware import dynamixel_bus
+from dynamixel import _crc16
+
+dxl = dynamixel_bus()
+
+def send(raw):
+    pkt = bytearray.fromhex(raw)
+    crc = _crc16(pkt)
+    pkt.append(crc & 0xFF)
+    pkt.append((crc >> 8) & 0xFF)
+    dxl._send(pkt)             # handles the DIR pin on either board
+    time.sleep(0.1)
+    resp = dxl.uart.read(256)
+    print([hex(b) for b in resp] if resp else None)
+
+send("FF FF FD 00 01 03 00 01")              # ping motor 1
+send("FF FF FD 00 01 06 00 03 41 00 01")     # LED on
+send("FF FF FD 00 01 06 00 03 41 00 00")     # LED off
+```
