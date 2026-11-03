@@ -187,8 +187,9 @@ class Tapster:
             self.ser.timeout = old_timeout
 
     def move(self, x=0, y=0, z=0, speed=100, easing="linear", step_size=5.0):
-        self.send({"cmd": "move", "x": x, "y": y, "z": z,
-                   "speed": speed, "easing": easing, "step_size": step_size})
+        return self.send({"cmd": "move", "x": x, "y": y, "z": z,
+                          "speed": speed, "easing": easing,
+                          "step_size": step_size})
 
     def tap(self, x=None, y=None, dx=0, dy=0, dz=None, speed=75):
         cmd = {"cmd": "tap", "dx": dx, "dy": dy, "speed": speed}
@@ -198,7 +199,7 @@ class Tapster:
             cmd["y"] = y
         if dz is not None:
             cmd["dz"] = dz
-        self.send(cmd)
+        return self.send(cmd)
 
     def hop(self, x=0, y=0, z=None, speed=50, arc_height=30, lift=5,
             easing="ease_in_out"):
@@ -208,10 +209,11 @@ class Tapster:
             cmd["z"] = z
         if easing is not None:
             cmd["easing"] = easing
-        self.send(cmd)
+        # slow hops can take far longer than send()'s 3 s reply window
+        return self.send_wait(cmd, timeout=60)
 
     def home(self, speed=100):
-        self.send({"cmd": "home", "speed": speed})
+        return self.send({"cmd": "home", "speed": speed})
 
     def status(self):
         return self.send({"cmd": "status"})
@@ -220,13 +222,13 @@ class Tapster:
         return self.send({"cmd": "ping"})
 
     def enable(self):
-        self.send({"cmd": "enable"})
+        return self.send({"cmd": "enable"})
 
     def disable(self):
-        self.send({"cmd": "disable"})
+        return self.send({"cmd": "disable"})
 
     def blink(self, motor_id=1, count=3):
-        self.send({"cmd": "blink", "id": motor_id, "count": count})
+        return self.send({"cmd": "blink", "id": motor_id, "count": count})
 
     def probe(self, threshold=3.0, step=1.0, max_depth=80):
         """Probe for surface by descending until load threshold is hit.

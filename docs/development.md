@@ -8,9 +8,8 @@ The firmware is CircuitPython and runs on an ESP32 DevKitC V4 (WROOM-32D/32E) or
 
 ```bash
 brew install tio
-python3 -m venv .venv
+make install                 # creates .venv with pyserial, pytest and ampy
 source .venv/bin/activate
-pip install adafruit-ampy pyserial
 ```
 
 Patch ampy for CircuitPython compatibility (it's only needed for the ESP32):
@@ -35,6 +34,8 @@ On your computer:
 
 - `tapster.py`: Python client (see the README).
 - `deploy.sh`: uploads `firmware/` to the board.
+- `Makefile`: `make test`, `make test-hw`, `make deploy`. Run `make` to list targets.
+- `tests/`: see [Tests](#tests).
 
 Reference (`docs/`):
 
@@ -81,6 +82,7 @@ done
     "motor_max": 3072,
     "pbm_ids": [4, 5, 6],
     "speed": 100,
+    "max_speed": 300,
     "origin": [0, 0, -120],
     "safety_height": 0,
     "surface_height": -10
@@ -91,6 +93,7 @@ done
 - `dxl_baudrate`: motor bus speed. It must match the motors' Baud Rate register.
 - `cmd_baudrate`: speed of the command UART on the header pins. USB serial is separate.
 - `origin`: kinematic position that becomes the user `(0, 0, 0)`.
+- `max_speed`: tip speed in mm/s for `hop` at `speed` 100. `speed` scales it linearly. `move` doesn't use it yet.
 - `pbm_ids`: Dynamixel IDs of the PBM motors. PBM commands refuse any other ID. Defaults to `[4, 5, 6]` if missing.
 - `board`, `pins`: optional overrides (see [Pinout](#pinout)).
 
@@ -143,6 +146,23 @@ While `CIRCUITPY` is mounted over USB, it is read-only to the firmware. `probe` 
 PBM motors (IDs 4, 5, 6) need the same Baud Rate and Protocol 2.0, Operating Mode 3 (position) and Status Return Level 2. Return Delay Time can be 250 like the delta motors (valet-pbm's 254 also works). Every motor on the bus needs a unique ID. The PBM also supports the XL430-W250-T.
 
 The three models share the control table except at address 126. On the XC430 it's Present Load (0.1 %). On the XC330 it's Present Current (1 mA). `get_load()` returns a percentage for both. On the XC330 it's Present Current as a percentage of Current Limit (address 38, default 910 mA). The two percentages aren't physically identical, so the `probe` threshold may need retuning on XC330 motors. `get_current()` returns raw mA on XC330s. Details in [dynamixel.md](dynamixel.md).
+
+## Tests
+
+```bash
+make test                          # unit + integration, no hardware, ~12 s
+make test-hw                       # on a connected robot: MOVES IT
+make test-hw PORT=/dev/cu.usbmodem2101 PBM_TO_POSITION=1200
+make test ARGS="-k hop -v"         # extra pytest arguments
+```
+
+- `tests/unit/`: each firmware module and the client on its own. `dynamixel.py` and `pbm.py` run against simulated motors that speak Protocol 2.0 bytes (CRC checked independently of the driver's table).
+- `tests/integration/`: the real `code.py`, main loop included, with the real `hardware.py`, `dynamixel.py` and `pbm.py`, driven by the real `tapster.py` client over a fake serial port (both the USB console and the command UART). Runs as a Pico and as an ESP32, with Tapster 3 and 3+ geometry. Every test also checks that the firmware's main loop is still running and that it sent only valid packets.
+- `tests/hardware/test_e2e.py`: draws a small square at `safety_height`, then taps each PBM motor from `PBM_FROM_POSITION` (default 2000) to `PBM_TO_POSITION` (default 1000) and checks it was released. Skipped unless run with `--hardware`, which `make test-hw` does. Also reads `TAPSTER_PORT`, `SQUARE_SIZE` and `PBM_IDS`.
+
+Tests marked `xfail` document known bugs that haven't been fixed yet. Once a bug is fixed, its test starts passing, and pytest reports that as a failure until the `xfail` mark is removed.
+
+`tests/fakes.py` has the simulated motors, the fake serial port and the firmware runner. The simulated bus records every packet, so tests can check exactly what reached the motors.
 
 ## Serial Console and Board REPL
 

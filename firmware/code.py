@@ -10,7 +10,7 @@ import sys
 import time
 from hardware import dynamixel_bus, command_uart, load_pins
 from kinematics import DeltaKinematics
-from motion import interpolate, steps_for_distance, hop
+from motion import interpolate, steps_for_distance, hop, distance
 # The PBM is an optional accessory: never let it stop the robot booting.
 try:
     from pbm import PBM, DEFAULT_IDS
@@ -45,6 +45,7 @@ MOTOR_IDS = config["motor_ids"]
 MOTOR_OFFSETS = config["motor_offsets"]
 MOTOR_DIRECTION = config["motor_direction"]
 SPEED = config.get("speed", 100)
+MAX_SPEED = config.get("max_speed", 300)  # tip speed in mm/s at speed 100 (hop)
 SAFETY_HEIGHT = config.get("safety_height", 0)
 SURFACE_HEIGHT = config.get("surface_height", 0)
 MOTOR_MIN = config.get("motor_min", 1024)
@@ -146,29 +147,59 @@ def line_to(x, y, z, speed=None, easing="ease_in_out", step_size=5.0):
     current_pos[2] = z
 
 
-def hop_to(x, y, z, speed=None, arc_height=30, easing="ease_in_out"):
+def motor_positions(x, y, z):
+    """Motor positions for user (x, y, z). Raises ValueError if unreachable."""
+    angles = dk.inverse(x + home_x, y + home_y, z + home_z)
+    return [angle_to_position(i, angles[i]) for i in range(len(MOTOR_IDS))]
+
+
+def profile_velocity(ticks, seconds):
+    """Profile Velocity (0.229 rpm units) that covers `ticks` in `seconds`."""
+    rpm = ticks / 4096.0 / seconds * 60.0
+    # at least 1: 0 means "no limit" to the motor
+    return max(1, min(1023, int(rpm / 0.229) + 1))
+
+
+def follow(waypoints, speed):
+    """Drive the tip through waypoints at `speed` % of max_speed (mm/s).
+
+    The whole path is checked before anything moves. For each segment, every
+    motor's Profile Velocity is set so that all three reach the waypoint
+    together, just as the next one is sent.
+    """
+    mm_per_s = MAX_SPEED * max(1, min(100, speed)) / 100.0
+    here = tuple(current_pos)
+    targets = [(w, motor_positions(*w)) for w in waypoints]
+    last = motor_positions(*here)
+    due = time.monotonic_ns()
+    for w, positions in targets:
+        seconds = max(0.002, distance(here, w) / mm_per_s)
+        moves = []
+        for i, mid in enumerate(MOTOR_IDS):
+            vel = profile_velocity(abs(positions[i] - last[i]), seconds)
+            moves.append((mid, vel, positions[i]))
+        dxl.sync_move(moves)
+        due += int(seconds * 1000000000)
+        wait = due - time.monotonic_ns()
+        if wait > 0:
+            time.sleep(wait / 1000000000)
+        here, last = w, positions
+
+
+def hop_to(x, y, z, speed=None, arc_height=30, easing="ease_in_out", lift=5):
     """Hop in a smooth arc from current position to (x, y, z).
 
+    speed: 1-100, % of max_speed (config.json, mm/s)
     arc_height: mm above the higher of start/end at the peak
     easing: easing function for XY movement
+    lift: mm to rise straight up before the arc
+    Raises ValueError, without moving, if any part of the arc is unreachable.
     """
     if speed is None:
         speed = SPEED
     start = tuple(current_pos)
     end = (x, y, z)
-    velocity = 1023
-    delay = 0.002 + (1.0 - speed / 100.0) * 0.02
-    for wx, wy, wz in hop(start, end, arc_height, easing=easing):
-        raw_x = wx + home_x
-        raw_y = wy + home_y
-        raw_z = wz + home_z
-        t1, t2, t3 = dk.inverse(raw_x, raw_y, raw_z)
-        angles = [t1, t2, t3]
-        moves = []
-        for i, mid in enumerate(MOTOR_IDS):
-            moves.append((mid, velocity, angle_to_position(i, angles[i])))
-        dxl.sync_move(moves)
-        time.sleep(delay)
+    follow(list(hop(start, end, arc_height, lift=lift, easing=easing)), speed)
     current_pos[0] = x
     current_pos[1] = y
     current_pos[2] = z
@@ -448,7 +479,7 @@ def handle(cmd_str):
         arc_height = msg.get("arc_height", 30)
         easing = msg.get("easing", "ease_in_out")
         try:
-            hop_to(x, y, z, speed, arc_height, easing)
+            hop_to(x, y, z, speed, arc_height, easing, lift)
             respond({"ok": True, "target": {"x": x, "y": y, "z": z}})
         except ValueError as e:
             respond({"error": str(e)})

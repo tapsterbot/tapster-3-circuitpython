@@ -144,9 +144,12 @@ Lifts up, travels in a smooth arc, and comes down at `x`, `y`, `z`. Use it to ge
 {"cmd":"hop","x":0,"y":0,"z":-20,"arc_height":50,"easing":"linear"}
 ```
 
-- `z` defaults to `safety_height`, and `speed` defaults to 50.
+- `z` defaults to `safety_height`.
+- `speed` is the tip's speed as a percentage of `max_speed` in `config.json` (default 300 mm/s), so the default `speed` of 50 is 150 mm/s. The reply comes when the hop has finished.
 - `arc_height` is how far above the start and end the arc peaks, in mm (default 30).
+- `lift` is how far to rise straight up before the arc, in mm (default 5).
 - `easing` defaults to `ease_in_out`. The options are the same as for `move`.
+- If any part of the arc is out of reach, the hop is refused with an error and the robot doesn't move. On a Tapster 3+, the arm reaches only about 18 mm above home, so lower `arc_height` (or start lower) for hops near `z` 0.
 
 ### tap
 
