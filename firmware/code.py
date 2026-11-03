@@ -131,15 +131,14 @@ def line_to(x, y, z, speed=None, easing="ease_in_out", step_size=5.0):
     steps = steps_for_distance(start, end, step_size)
     velocity = 1023
     delay = 0.002 + (1.0 - speed / 100.0) * 0.02
-    for wx, wy, wz in interpolate(start, end, steps, easing):
-        raw_x = wx + home_x
-        raw_y = wy + home_y
-        raw_z = wz + home_z
-        t1, t2, t3 = dk.inverse(raw_x, raw_y, raw_z)
-        angles = [t1, t2, t3]
+    # plan the whole line first: refuse it, without moving, if any of it is
+    # out of reach (see motor_positions)
+    path = [motor_positions(*w)
+            for w in interpolate(start, end, steps, easing)]
+    for positions in path:
         moves = []
         for i, mid in enumerate(MOTOR_IDS):
-            moves.append((mid, velocity, angle_to_position(i, angles[i])))
+            moves.append((mid, velocity, positions[i]))
         dxl.sync_move(moves)
         time.sleep(delay)
     current_pos[0] = x
@@ -147,10 +146,24 @@ def line_to(x, y, z, speed=None, easing="ease_in_out", step_size=5.0):
     current_pos[2] = z
 
 
-def motor_positions(x, y, z):
-    """Motor positions for user (x, y, z). Raises ValueError if unreachable."""
+def motor_positions(x, y, z, strict=True):
+    """Motor positions for user (x, y, z).
+
+    Raises ValueError if (x, y, z) is unreachable or, when strict, if it
+    needs a motor outside motor_min..motor_max. (angle_to_position would
+    clamp that motor instead, putting the tip somewhere else.)
+    """
     angles = dk.inverse(x + home_x, y + home_y, z + home_z)
-    return [angle_to_position(i, angles[i]) for i in range(len(MOTOR_IDS))]
+    positions = [angle_to_position(i, angles[i]) for i in range(len(MOTOR_IDS))]
+    if strict:
+        for i, angle in enumerate(angles):
+            pos = MOTOR_OFFSETS[i] + MOTOR_DIRECTION[i] * angle * 4096.0 / 360.0
+            if not MOTOR_MIN <= pos <= MOTOR_MAX:
+                raise ValueError(
+                    "Out of reach: (%.1f, %.1f, %.1f) needs motor %d at %d, "
+                    "outside motor_min-motor_max (%d-%d)" % (
+                        x, y, z, MOTOR_IDS[i], int(pos), MOTOR_MIN, MOTOR_MAX))
+    return positions
 
 
 def profile_velocity(ticks, seconds):
@@ -170,7 +183,7 @@ def follow(waypoints, speed):
     mm_per_s = MAX_SPEED * max(1, min(100, speed)) / 100.0
     here = tuple(current_pos)
     targets = [(w, motor_positions(*w)) for w in waypoints]
-    last = motor_positions(*here)
+    last = motor_positions(*here, strict=False)  # where the motors are now
     due = time.monotonic_ns()
     for w, positions in targets:
         seconds = max(0.002, distance(here, w) / mm_per_s)

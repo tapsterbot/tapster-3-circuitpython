@@ -122,6 +122,7 @@ Moves in a straight line to `x`, `y`, `z`.
 - `x`, `y` default to 0, and `z` defaults to `safety_height`.
 - `easing` sets how the motion speeds up and slows down: `linear` (default), `ease_in`, `ease_out`, `ease_in_out`, `ease_in_cubic`, `ease_out_cubic` or `ease_in_out_cubic`.
 - `step_size` is the spacing between waypoints in mm (default 5). Smaller values give smoother motion.
+- If any part of the line is out of reach, or would need a motor beyond `motor_min`/`motor_max` in `config.json`, the move is refused with an error and the robot doesn't move.
 
 #### Example: draw a square
 

@@ -90,18 +90,50 @@ def test_draw_square(robot):
         assert min(abs(abs(x) - 10), abs(abs(y) - 10)) < 0.3
 
 
-def test_unreachable_move_is_refused(robot):
-    assert "Unreachable" in robot.t.move(x=999, y=999)["error"]
-    assert robot.t.status()["ok"]
-
-
-@pytest.mark.xfail(strict=True, reason=(
-    "move drives the arm along the line, clamping at motor limits, until the "
-    "first unreachable waypoint, then replies with an error. status keeps "
-    "the old position, so the next move starts with a full-speed jump"))
-def test_unreachable_move_does_not_move_the_arm(robot):
-    robot.t.move(x=999, y=999)
+def test_unreachable_move_is_refused_without_moving(robot):
+    mark = robot.mark()
+    error = robot.t.move(x=999, y=999)["error"]
+    assert error.startswith(("Unreachable", "Out of reach")), error
+    assert robot.bus.sync_goals[mark:] == []
     assert robot.xyz() == approx(0, 0, 0)
+    assert robot.t.position == (0, 0, 0)
+
+
+def test_move_after_a_refused_one_starts_where_the_arm_is(robot):
+    robot.t.move(x=999, y=999)
+    mark = robot.mark()
+    assert robot.t.move(x=10, y=0)["ok"]
+    path = robot.path(mark)
+    assert path[0] == approx(2, 0, 0, tol=1)  # first 1/5 of the way, no jump
+    assert path[-1] == approx(10, 0, 0)
+
+
+# On the Tapster 3, (50, -50, -50) can be solved but needs motor 1 at
+# position ~3139, past motor_max (3072). Clamping it would put the tip
+# somewhere else, so it's refused.
+PAST_MOTOR_MAX = dict(x=50, y=-50, z=-50)
+
+
+def test_move_past_motor_limits_is_refused_without_moving(make_robot):
+    r = make_robot(robot="tapster3")
+    mark = r.mark()
+    error = r.t.move(**PAST_MOTOR_MAX)["error"]
+    assert "Out of reach" in error and "motor_min-motor_max (1024-3072)" in error
+    assert r.bus.sync_goals[mark:] == []
+    assert r.t.position == (0, 0, 0)
+
+
+def test_hop_past_motor_limits_is_refused_without_moving(make_robot):
+    r = make_robot(robot="tapster3")
+    mark = r.mark()
+    assert "Out of reach" in r.t.hop(arc_height=5, **PAST_MOTOR_MAX)["error"]
+    assert r.bus.sync_goals[mark:] == []
+
+
+def test_move_to_the_edge_of_the_area_still_works(make_robot):
+    r = make_robot(robot="tapster3")
+    assert r.t.move(x=50, y=-50, z=-30)["ok"]
+    assert r.xyz() == approx(50, -50, -30)
 
 
 def test_home(robot):
