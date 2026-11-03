@@ -158,7 +158,7 @@ make test ARGS="-k hop -v"         # extra pytest arguments
 
 - `tests/unit/`: each firmware module and the client on its own. `dynamixel.py` and `pbm.py` run against simulated motors that speak Protocol 2.0 bytes (CRC checked independently of the driver's table).
 - `tests/integration/`: the real `code.py`, main loop included, with the real `hardware.py`, `dynamixel.py` and `pbm.py`, driven by the real `tapster.py` client over a fake serial port (both the USB console and the command UART). Runs as a Pico and as an ESP32, with Tapster 3 and 3+ geometry. Every test also checks that the firmware's main loop is still running and that it sent only valid packets.
-- `tests/hardware/test_e2e.py`: draws a small square at `safety_height`, then taps each PBM motor from `PBM_FROM_POSITION` (default 2000) to `PBM_TO_POSITION` (default 1000) and checks it was released. Skipped unless run with `--hardware`, which `make test-hw` does. Also reads `TAPSTER_PORT`, `SQUARE_SIZE` and `PBM_IDS`.
+- `tests/hardware/test_e2e.py`: draws a small square at `safety_height`, taps once at home (down to `surface_height`), then taps each PBM motor from `PBM_FROM_POSITION` (default 2000) to `PBM_TO_POSITION` (default 1000) and checks it was released. Skipped unless run with `--hardware`, which `make test-hw` does. Also reads `TAPSTER_PORT`, `SQUARE_SIZE` and `PBM_IDS`.
 
 Tests marked `xfail` document known bugs that haven't been fixed yet. Once a bug is fixed, its test starts passing, and pytest reports that as a failure until the `xfail` mark is removed.
 

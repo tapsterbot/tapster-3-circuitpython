@@ -1,4 +1,5 @@
-"""End to end on a real robot: draws a small square, then taps each PBM motor.
+"""End to end on a real robot: draws a small square, taps once at home, then
+taps each PBM motor.
 
 MOVES THE ROBOT. Clear the area under the tip and around the PBM first.
 Run with `make test-hw` (or `make test-hw PORT=/dev/cu.usbmodem2101`).
@@ -49,6 +50,14 @@ def test_draw_square(t):
         assert resp == {"ok": True, "target": {"x": x, "y": y, "z": z}}, resp
         assert t.position == (x, y, z)
     assert t.home(speed=50)["ok"]
+
+
+def test_tap(t):
+    # presses down to surface_height at home, then back up to safety_height
+    surface, safety = t.surface_height, t.safety_height
+    resp = t.tap()
+    assert resp == {"ok": True, "tap": {"x": 0, "y": 0, "z": surface}}, resp
+    assert t.position == (0, 0, safety)
 
 
 def test_pbm_motors_answer(t):
