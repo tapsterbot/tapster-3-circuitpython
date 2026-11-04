@@ -34,13 +34,19 @@ You should see something like `Python 3.12.4`. If you get an error, or a version
 
 ## 2. Get the Tapster software
 
-Put the Tapster folder somewhere on your computer, for example in your home folder. It's the folder that contains `tapster.py` and this `docs` folder. If you downloaded it as a `.zip` file, unzip it first.
-
-In the terminal, go into that folder. For example, if it's called `tapster` in your home folder:
+Download the Tapster software into your home folder, then go into it:
 
 ```bash
-cd ~/tapster
+cd ~
+git clone https://github.com/tapsterbot/tapster-3-circuitpython.git
+cd tapster-3-circuitpython
 ```
+
+On macOS, the first `git` command may offer to install the command line developer tools. Accept, wait for the install to finish, then run the commands again.
+
+If `git` isn't installed (common on Windows), open [github.com/tapsterbot/tapster-3-circuitpython](https://github.com/tapsterbot/tapster-3-circuitpython) in a browser, click **Code › Download ZIP**, and unzip it into your home folder. Then go into the unzipped folder: `cd ~/tapster-3-circuitpython-main`.
+
+From now on, this is the Tapster folder: the one with `tapster.py` in it. Every command in this tutorial runs from there.
 
 Now create a private Python environment for Tapster and install the one library it needs, `pyserial`:
 
