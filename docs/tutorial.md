@@ -7,6 +7,7 @@ In this tutorial you'll set up your computer, connect to a Tapster 3 robot, and 
 - sent it back home
 - made it tap
 - pressed a button with the Push Button Module (PBM), if your robot has one
+- drawn the square once more, from a Python script
 
 You don't need any experience with robots. You'll type a few commands into a terminal, then drive the robot from a Python prompt. You don't need a phone either: everything here happens in the air.
 
@@ -80,6 +81,8 @@ In the same terminal, in the Tapster folder, run:
 ```bash
 python tapster.py -i
 ```
+
+The `-i` stands for *interactive*. `tapster.py` connects to the robot, then leaves you at a Python prompt instead of exiting, so you can type commands one at a time and see the robot respond straight away. It's the easiest way to try things out.
 
 On Windows, you need to name the robot's port. Find it in **Device Manager › Ports (COM & LPT)**; it looks like `COM3`. Then run `python tapster.py -i --port COM3`, with your port's name.
 
@@ -190,7 +193,7 @@ The tip dips 10 mm and comes back up. That's a tap. With a phone under the tip, 
 
 ## 10. Press a button with the PBM
 
-The Push Button Module (PBM) is a set of up to three actuators mounted beside the device, for pressing its side buttons. Its motors are numbered 4, 5 and 6. If your robot has no PBM, you're done: skip to the end.
+The Push Button Module (PBM) is a set of up to three actuators mounted beside the device, for pressing its side buttons. Its motors are numbered 4, 5 and 6. If your robot has no PBM, skip to step 11.
 
 Check which PBM motors are there:
 
@@ -216,27 +219,62 @@ MoveResult(position=1003, contact=False, final_effort=0.4, peak_effort=13.2, eff
 
 Motor 4 presses and comes back. The positions are the motor's own units, not millimetres. It starts from 2000 and pushes toward 1000. If it meets a button on the way, it stops there instead and shows `contact=True`. Your numbers will be a little different.
 
-When you've finished, leave the Python prompt:
+## 11. Run the square as a script
+
+At the prompt, the robot does each command as you type it. A script is a file of commands that Python runs from start to finish, with no `-i` and no prompt. It's how you repeat something without typing it again.
+
+First, leave the prompt. Only one program can talk to the robot at a time, and the script will need it:
 
 ```python
 >>> exit()
 ```
 
+Open a text editor and create a new file containing:
+
+```python
+from tapster import Tapster
+
+t = Tapster()  # on Windows: Tapster(port="COM3"), with your port's name
+
+for x, y in [(-10, 10), (10, 10), (10, -10), (-10, -10), (-10, 10)]:
+    t.move(x=x, y=y, speed=30)
+
+t.home()
+t.close()
+```
+
+Save it as `square.py` in the Tapster folder, next to `tapster.py`. Any plain-text editor works. In TextEdit on macOS, choose **Format › Make Plain Text** first. In Notepad on Windows, set **Save as type** to **All files**, or it saves as `square.py.txt`.
+
+Run it from the terminal, in the Tapster folder:
+
+```bash
+python square.py
+```
+
+The robot draws the same square as in step 6, goes home, and the script ends:
+
+```
+Connected: /dev/cu.usbmodem2101
+```
+
+Run `python square.py` again and the robot draws the square again.
+
 ## What you've done
 
-You installed the Tapster client, connected to the robot with `python tapster.py -i`, and drove it with `t.move`, `t.hop`, `t.home`, `t.tap` and `t.pbm.tap`. That's the core of driving a Tapster: one command at a time, each answered by a reply.
+You installed the Tapster client, connected to the robot with `python tapster.py -i`, and drove it with `t.move`, `t.hop`, `t.home`, `t.tap` and `t.pbm.tap`. Then you put commands in a script and ran them without the prompt. That's the core of driving a Tapster: one command at a time, each answered by a reply, typed at the prompt or run from a file.
 
 Next:
 
 - Start the prompt again any time with `python tapster.py -i`, from the Tapster folder with the environment active (step 2).
-- To run the same commands from your own Python script, see [Python Client](../README.md#python-client) in the README.
+- For everything the client can do in a script, see [Python Client](../README.md#python-client) in the README.
 - To tap a real phone, the robot needs to know how high the screen is. See `probe` and `surface` in the [README](../README.md#coordinates-and-heights).
 - All the commands, and their options, are listed in the [README](../README.md#commands).
 
 ## If something goes wrong
 
 - **`No serial port found. Is the board connected?`** Check the USB cable, and use a cable that carries data, not just power. On Windows, always give `--port`.
-- **`could not open port` or `Resource busy`:** another program is using the robot's port. Close any other Tapster prompt or serial terminal, then try again.
+- **`could not open port` or `Resource busy`:** another program is using the robot's port. Close any other Tapster prompt, script or serial terminal, then try again. Before running `square.py`, leave the `>>>` prompt with `exit()`.
+- **`ModuleNotFoundError: No module named 'tapster'`:** `square.py` isn't in the Tapster folder, or you're running it from somewhere else. Put it next to `tapster.py` and run it from that folder.
 - **Linux: `Permission denied: '/dev/ttyACM0'`:** your user isn't allowed to use serial ports yet. Run `sudo usermod -aG dialout $USER`, log out and back in, then try again.
 - **Linux: `python3 -m venv` says `ensurepip is not available`:** install the venv package (on Debian or Ubuntu, `sudo apt install python3-venv`), then repeat step 2.
 - **Windows: `activate` fails with "running scripts is disabled on this system":** run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once in PowerShell, then run the `activate` line again.

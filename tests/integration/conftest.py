@@ -54,6 +54,8 @@ def make_robot(tmp_path, monkeypatch):
         fw.start()
         monkeypatch.setattr(tapster.serial, "Serial",
                             lambda port, baud, timeout=None: fw.serial(transport, timeout))
+        # Tapster() with no port looks for real devices first; never do that
+        monkeypatch.setattr(tapster, "find_port", lambda: f"fake-{transport}")
         # skip the client's 0.5 s settle delay; leave time.time alone
         monkeypatch.setattr(tapster, "time",
                             types.SimpleNamespace(time=time.time, sleep=lambda s: None))
