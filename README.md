@@ -322,3 +322,7 @@ Every PBM command takes the motor's `id`, except `pbm_ping`, where it's optional
 - `pbm_torque`, `pbm_led`: turn on or off with `on`. Without `on`, they report the current state.
 
 `enable` and `disable` only affect the delta arms. Use `pbm_torque` for PBM motors.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
